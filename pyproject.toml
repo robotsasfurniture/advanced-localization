@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "new-localization"
+version = "0.1.0"
+description = ""
+authors = ["John Finberg <johnbfinberg@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+scipy = "^1.14.1"
+pyroomacoustics = "^0.8.3"
+torch = "^2.5.1"
+matplotlib = "^3.9.3"
+torch-same-pad = {git = "https://github.com/CyberZHG/torch-same-pad.git"}
+tensorflow = "^2.18.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
