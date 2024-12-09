@@ -1,3 +1,4 @@
+from itertools import combinations
 import numpy as np
 import torch
 import random
@@ -17,7 +18,7 @@ np.random.seed(42)
 ###############################################
 # Load the sample speech signal
 ###############################################
-filename = "prerecorded_speech.wav"  # Adjust if needed
+filename = "speech_small.wav"  # Adjust if needed
 fs, signal = wavfile.read(filename)
 signal = np.array(signal, dtype=float)
 
@@ -33,7 +34,7 @@ room_dim = [3.0, 2.5]  # 2D: [length, width]
 t60 = 0.6  # Reverberation time
 snr = 10  # SNR in dB
 
-# Microphone array (3 mics) in 2D: shape (2, 3)
+# Microphone array (4 mics) in 2D: shape (2, 4)
 mic_locs = np.array(
     [
         [1.5, 1.25 + 0.4500],
@@ -74,7 +75,7 @@ plt.show()
 ###############################################
 # Compute the true TDOAs for reference
 ###############################################
-pairs_list = [[0, 1], [0, 2], [1, 2]]
+pairs_list = list(combinations(range(4), 2))
 true_delays = []
 for pairs in pairs_list:
     d = np.sqrt(np.sum((mic_locs[:, pairs[0]] - source_loc) ** 2)) - np.sqrt(
