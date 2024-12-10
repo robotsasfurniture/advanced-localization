@@ -52,7 +52,10 @@ class ConventionalSrp(XSrp):
                  interpolation=False,
                  n_average_samples=1,
                  n_dft_bins=1024,
-                 freq_cutoff_in_hz=None):
+                 freq_cutoff_low_in_hz=None,
+                 freq_cutoff_high_in_hz=None
+                #  freq_cutoff_in_hz=None
+                 ):
         if grid_type not in ["2D", "3D", "doa_1D", "doa_2D"]:
             raise ValueError("grid_type must be one of '2D', '3D', 'doa_1D', 'doa_2D'")
         
@@ -61,8 +64,10 @@ class ConventionalSrp(XSrp):
             raise ValueError(
                 "mode must be one of {}".format(available_modes)
             )
-    
-        freq_cutoff_in_hz = freq_cutoff_in_hz or fs//2
+        
+        freq_cutoff_low_in_hz = freq_cutoff_low_in_hz or 0
+        freq_cutoff_high_in_hz = freq_cutoff_high_in_hz or fs//2
+        # freq_cutoff_in_hz = freq_cutoff_in_hz or fs//2
         
         self.grid_type = grid_type
         self.n_grid_cells = n_grid_cells
@@ -71,7 +76,8 @@ class ConventionalSrp(XSrp):
         self.interpolation = interpolation
         self.n_average_samples = n_average_samples
         self.n_dft_bins = n_dft_bins
-        self.freq_cutoff = freq_cutoff_in_hz*n_dft_bins//fs
+        # self.freq_cutoff = freq_cutoff_in_hz*n_dft_bins//fs
+        self.freq_cutoff = (freq_cutoff_low_in_hz*n_dft_bins//fs, freq_cutoff_high_in_hz*n_dft_bins//fs)
 
         super().__init__(fs, mic_positions, room_dims, c)
     
@@ -100,6 +106,7 @@ class ConventionalSrp(XSrp):
                        signal_features: np.array):
 
         if self.mode == "gcc_phat_freq":
+            print(f"Candidate grid shape: {candidate_grid.positions.shape}")
             return frequency_projector(
                 mic_positions,
                 candidate_grid,
