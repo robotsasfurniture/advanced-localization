@@ -2,7 +2,7 @@ import numpy as np
 
 from abc import ABC, abstractmethod
 
-from xsrp.grids import Grid
+from xsrp_project.xsrp.grids import Grid
 
 
 class XSrp(ABC):
@@ -17,12 +17,14 @@ class XSrp(ABC):
         # 0. Create the initial grid of candidate positions
         self.candidate_grid = self.create_initial_candidate_grid(room_dims)
 
-    def forward(self, mic_signals, mic_positions=None, room_dims=None) -> tuple[set, np.array]:
+    def forward(
+        self, mic_signals, mic_positions=None, room_dims=None
+    ) -> tuple[set, np.array]:
         if mic_positions is None:
             mic_positions = self.mic_positions
         if room_dims is None:
             room_dims = self.room_dims
-        
+
         if mic_positions is None:
             raise ValueError(
                 """
@@ -30,7 +32,7 @@ class XSrp(ABC):
                 either in the constructor or in the forward method
                 """
             )
-        
+
         candidate_grid = self.candidate_grid
 
         estimated_positions = np.array([])
@@ -57,7 +59,7 @@ class XSrp(ABC):
                 candidate_grid = new_candidate_grid
 
         return estimated_positions, srp_map, candidate_grid
-    
+
     @abstractmethod
     def compute_signal_features(self, mic_signals):
         pass
@@ -67,13 +69,13 @@ class XSrp(ABC):
         pass
 
     @abstractmethod
-    def create_srp_map(self,
-                       mic_positions: np.array,
-                       candidate_grid: Grid,
-                       signal_features: np.array):
+    def create_srp_map(
+        self, mic_positions: np.array, candidate_grid: Grid, signal_features: np.array
+    ):
         pass
 
     @abstractmethod
-    def grid_search(self, candidate_grid, srp_map,
-                    estimated_positions, signal_features) -> tuple[np.array, np.array]:
+    def grid_search(
+        self, candidate_grid, srp_map, estimated_positions, signal_features
+    ) -> tuple[np.array, np.array]:
         pass

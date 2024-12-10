@@ -13,6 +13,7 @@ torch = "^2.5.1"
 matplotlib = "^3.9.3"
 torch-same-pad = {git = "https://github.com/CyberZHG/torch-same-pad.git"}
 tensorflow = "^2.18.0"
+sounddevice = "^0.5.1"
 
 
 [build-system]
