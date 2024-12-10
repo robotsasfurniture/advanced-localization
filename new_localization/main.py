@@ -35,12 +35,19 @@ srp_func = ConventionalSrp(
 )
 
 # Set up a matplotlib figure for live updates
-fig, ax = plt.subplots()
-ax.set_xlim(-1, 1)
-ax.set_ylim(-1, 1)
-ax.set_title("Real-time Sound Localization")
-scat = ax.scatter([], [], c="red", s=50, label="Estimated Source")
-ax.legend()
+fig = plt.figure()
+
+# Create a 2D scatter plot
+ax1 = fig.add_subplot(1, 2, 1)  # 1 row, 2 columns, 1st subplot
+ax1.set_xlim(-1, 1)
+ax1.set_ylim(-1, 1)
+ax1.set_title("Real-time Sound Localization")
+scat = ax1.scatter([], [], c="red", s=50, label="Estimated Source")
+ax1.legend()
+
+# Create a 3D plot
+ax2 = fig.add_subplot(111, projection="3d")  # 1 row, 2 columns, 2nd subplot
+ax2.set_title("3D Data Map")
 
 # A buffer to store audio data
 audio_buffer = np.zeros((channels, frame_size))
@@ -64,6 +71,18 @@ def audio_callback(indata, frames, time, status):
         est_pos = estimated_positions[0]
         # Update the scatter plot with the estimated position
         scat.set_offsets([est_pos[0], est_pos[1]])
+
+        # I want to plot the SRP map
+        x = candidate_grid[:, 0].reshape((200, 200))
+        y = candidate_grid[:, 1].reshape((200, 200))
+        z = srp_map.reshape((200, 200))
+
+        ax2.clear()
+        ax2.plot_surface(x, y, z, cmap="viridis", edgecolor="none")
+        ax2.set_title("SRP Map")
+        ax2.set_xlabel("x (cm)")
+        ax2.set_ylabel("y (cm)")
+        ax2.set_zlabel("Power")
 
     # Force matplotlib to redraw
     plt.pause(0.001)
