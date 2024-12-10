@@ -103,7 +103,8 @@ def frequency_projector(mic_positions: np.array,
                         cross_correlation_matrix: np.array,
                         fs: float,
                         sum_pairs: bool = True,
-                        freq_cutoff: int = None):
+                        # freq_cutoff: int = None
+                        freq_cutoff: tuple = (None, None)):
     """
     Creates a Steered Response Power (SRP) likelihood map by steering the frequency domain
     cross-correlation between microphone pairs to the corresponding grid cell and frequency bin.    
@@ -131,8 +132,11 @@ def frequency_projector(mic_positions: np.array,
 
     srp_map = cross_correlation_matrix[np.newaxis] * spatial_mapper
 
-    if freq_cutoff is not None:
-        srp_map = srp_map[..., :freq_cutoff]
+    if freq_cutoff[0] is not None or freq_cutoff[1] is not None:
+        srp_map = srp_map[..., freq_cutoff[0]:freq_cutoff[1]]
+
+    # if freq_cutoff is not None:
+    #     srp_map = srp_map[..., :freq_cutoff]
 
     if sum_pairs:
         # Sum the cross-correlation values of each microphone pair and frequency
