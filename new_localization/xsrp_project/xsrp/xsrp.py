@@ -23,7 +23,7 @@ class XSrp(ABC):
             model='silero_vad',
             source='github'
         )
-        (self.get_speech_timestamps, _, _, _) = self.vad_utils
+        (self.get_speech_timestamps, _, _, _, _) = self.vad_utils
 
     def smooth_srp_map(self, srp_map, window_size:int=5):
         """
@@ -41,7 +41,10 @@ class XSrp(ABC):
         for peak in peaks:
             mask[peak] = 1
 
-        mask = self.smooth_srp_map(mask, window_size=10)  # Smooth the mask to create transition regions
+        print(f"Mask shape: {mask.shape}")
+        print(f"Data shape: {data.shape}")
+
+        # mask = self.smooth_srp_map(mask, window_size=10)  # Smooth the mask to create transition regions
         return data * (1 + mask * sidelobe_reduction)
 
     def align_peaks_with_audio(self, srp_map, mic_signals, candidate_grid, n_best=4, segment_duration=0.5, target_sample_rate=16000):
@@ -66,21 +69,21 @@ class XSrp(ABC):
         half_segment_samples = int((segment_duration * self.fs) / 2)
 
         for candidate in top_candidates:
-            for mic_signal in mic_signals:
-                # Calculate the delay for this candidate and microphone
-                delay = np.linalg.norm(candidate - self.mic_positions[0]) / self.c
-                delay_samples = int(delay * self.fs)
+            # Calculate the delay for this candidate and the reference microphone
+            delay = np.linalg.norm(candidate - self.mic_positions[0]) / self.c
+            delay_samples = int(delay * self.fs)
 
-                # Extract the segment around the delay
-                start = max(0, delay_samples - half_segment_samples)
-                end = min(len(mic_signal), delay_samples + half_segment_samples)
-                segment = mic_signal[start:end]
-                segment_resampled = torchaudio.transforms.Resample(orig_freq=self.fs, new_freq=target_sample_rate)(torch.tensor(segment, dtype=torch.float32))
-                audio_segments.append(segment_resampled)
+            # Extract the segment around the delay
+            mic_signal = mic_signals[0]  # Use the first microphone signal as the reference
+            start = max(0, delay_samples - half_segment_samples)
+            end = min(len(mic_signal), delay_samples + half_segment_samples)
+            segment = mic_signal[start:end]
+            segment_resampled = torchaudio.transforms.Resample(orig_freq=self.fs, new_freq=target_sample_rate)(torch.tensor(segment.copy(), dtype=torch.float32))
+            audio_segments.append(segment_resampled)
 
         return top_indices, audio_segments
 
-    def classify_candidates_with_vad(self, audio_segments):
+    def classify_candidates_with_vad(self, audio_segments, target_sample_rate=16000):
         """
         Classify each candidate as speech or non-speech using silero-vad.
 
@@ -98,7 +101,7 @@ class XSrp(ABC):
                 segment = torch.from_numpy(segment.astype(np.float32))
 
             # Apply VAD
-            speech_timestamps = self.get_speech_timestamps(segment, self.vad_model, sampling_rate=self.fs)
+            speech_timestamps = self.get_speech_timestamps(segment, self.vad_model, sampling_rate=target_sample_rate)
 
             # Label segment as speech or non-speech based on VAD
             is_speech = True if len(speech_timestamps) > 0 else False
@@ -144,6 +147,10 @@ class XSrp(ABC):
             # ---- Integrate VAD Classification ----
             # Classify the top candidates as speech or non-speech (True as speech, False as non speech)
             vad_labels = self.classify_candidates_with_vad(audio_segments)
+
+            print(f"Top indices shape: {top_indices.shape}")
+            print(f"Vad labels shape: {len(vad_labels)}")
+            print(f"Vad labels: {vad_labels}")
 
             # Here you can use vad_labels to filter non-speech candidates
             # For example, remove candidates that are non-speech or reduce their SRP scores

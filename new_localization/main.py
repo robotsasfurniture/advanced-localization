@@ -68,7 +68,6 @@ audio_buffer = np.zeros((channels, frame_size))
 
 # This callback will be called by sounddevice for each block of audio data
 def audio_callback(indata, frames, time, status):
-    print("Audio callback")
     # indata: shape (frames, channels)
     global audio_buffer, srp_func, scat
 

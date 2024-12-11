@@ -15,6 +15,7 @@ torch-same-pad = {git = "https://github.com/CyberZHG/torch-same-pad.git"}
 sounddevice = "^0.5.1"
 numpy = "^2.2.0"
 noisereduce = "^3.0.3"
+torchaudio = "^2.5.1"
 
 
 [build-system]
