@@ -44,7 +44,7 @@ class XSrp(ABC):
         mask = self.smooth_srp_map(mask, window_size=10)  # Smooth the mask to create transition regions
         return data * (1 + mask * sidelobe_reduction)
 
-    def align_peaks_with_audio(self, srp_map, mic_signals, candidate_grid, n_best=4, segment_duration=0.5):
+    def align_peaks_with_audio(self, srp_map, mic_signals, candidate_grid, n_best=4, segment_duration=0.5, target_sample_rate=16000):
         """
         Align top peaks in the SRP map with audio segments from the microphone signals.
 
@@ -75,7 +75,8 @@ class XSrp(ABC):
                 start = max(0, delay_samples - half_segment_samples)
                 end = min(len(mic_signal), delay_samples + half_segment_samples)
                 segment = mic_signal[start:end]
-                audio_segments.append(segment)
+                segment_resampled = torchaudio.transforms.Resample(orig_freq=self.fs, new_freq=target_sample_rate)(torch.tensor(segment, dtype=torch.float32))
+                audio_segments.append(segment_resampled)
 
         return top_indices, audio_segments
 
