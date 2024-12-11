@@ -56,7 +56,7 @@ class XSrp(ABC):
             segment_duration (float): Duration of the audio segment in seconds.
 
         Returns:
-            tuple: A tuple containing the top indices, top candidates, and the audio segments.
+            tuple: A tuple containing the top indices and the audio segments.
         """
         # Get the top n peak indices from the SRP map
         top_indices = np.argsort(srp_map)[-n_best:]
@@ -77,41 +77,30 @@ class XSrp(ABC):
                 segment = mic_signal[start:end]
                 audio_segments.append(segment)
 
-        return top_indices, top_candidates, audio_segments
+        return top_indices, audio_segments
 
-    def classify_candidates_with_vad(self, mic_signals, top_candidates, segment_duration=0.5):
+    def classify_candidates_with_vad(self, audio_segments):
         """
         Classify each candidate as speech or non-speech using silero-vad.
 
-        This is a placeholder method. It assumes:
-        - You can extract a segment of audio from mic_signals for each candidate.
-        - Here, we dynamically analyze each candidate individually.
-        In a real scenario, you'd beamform towards each candidate and pick a segment of the beamformed output.
+        Args:
+            audio_segments (list): List of audio segments aligned with SRP map peaks.
+
+        Returns:
+            list: A list of binary labels (True for speech, False for non-speech) for each segment.
         """
         vad_labels = []
-        for candidate in top_candidates:
-            # Use the signal from the first microphone for simplicity
-            audio_data = torch.from_numpy(mic_signals[0].astype(np.float32))
 
-            # Dynamically determine the segment based on the presence of strong signals
-            signal_threshold = 0.1 * np.max(audio_data.numpy())  # Example threshold
-            significant_indices = np.where(audio_data.numpy() > signal_threshold)[0]
-            if len(significant_indices) > 0:
-                center_index = significant_indices[len(significant_indices) // 2]
-            else:
-                center_index = len(audio_data) // 2  # Fallback to center of the signal
-
-            # Determine the number of samples for the segment
-            half_segment_samples = int((segment_duration * self.fs) / 2)
-            start = max(0, center_index - half_segment_samples)
-            end = min(len(audio_data), center_index + half_segment_samples)
-            segment = audio_data[start:end]
+        for segment in audio_segments:
+            # Convert the audio segment to a torch.Tensor if it is not already
+            if not isinstance(segment, torch.Tensor):
+                segment = torch.from_numpy(segment.astype(np.float32))
 
             # Apply VAD
             speech_timestamps = self.get_speech_timestamps(segment, self.vad_model, sampling_rate=self.fs)
 
-            # Label candidate as speech or non-speech based on VAD
-            is_speech = 1 if len(speech_timestamps) > 0 else 0
+            # Label segment as speech or non-speech based on VAD
+            is_speech = True if len(speech_timestamps) > 0 else False
             vad_labels.append(is_speech)
 
         return vad_labels
@@ -145,21 +134,21 @@ class XSrp(ABC):
             # Smooth SRP map
             srp_map = self.smooth_srp_map(srp_map=srp_map)
 
+            # Align peaks with audio
+            top_indices, audio_segments = self.align_peaks_with_audio(srp_map, mic_signals, candidate_grid, n_best=n_best, segment_duration=0.5)
+
             # Apply GSC
             srp_map = self.apply_gsc(srp_map, top_indices)
 
-            # Align peaks with audio
-            top_indices, top_candidates, audio_segments = self.align_peaks_with_audio(srp_map, mic_signals, candidate_grid, n_best=n_best, segment_duration=0.5)
-
             # ---- Integrate VAD Classification ----
-            # Classify the top candidates as speech or non-speech (1 as speech, 0 as non speech)
-            vad_labels = self.classify_candidates_with_vad(mic_signals, top_candidates, segment_duration=0.5)
+            # Classify the top candidates as speech or non-speech (True as speech, False as non speech)
+            vad_labels = self.classify_candidates_with_vad(audio_segments)
 
             # Here you can use vad_labels to filter non-speech candidates
             # For example, remove candidates that are non-speech or reduce their SRP scores
             # This is just an example:
             for idx, label in enumerate(vad_labels):
-                if label == 0:
+                if not label:
                     # Reduce SRP score for non-speech candidates
                     srp_map[top_indices[idx]] *= 0.1
 
