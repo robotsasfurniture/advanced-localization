@@ -1,9 +1,9 @@
 import numpy as np
-
+import torch
+import torchaudio
 from abc import ABC, abstractmethod
 
 from xsrp_project.xsrp.grids import Grid
-
 
 class XSrp(ABC):
     def __init__(self, fs: float, mic_positions=None, room_dims=None, c=343.0):
@@ -16,16 +16,23 @@ class XSrp(ABC):
 
         # 0. Create the initial grid of candidate positions
         self.candidate_grid = self.create_initial_candidate_grid(room_dims)
-    
+
+        # ---- Load Silero VAD model here ----
+        self.vad_model, self.vad_utils = torch.hub.load(
+            repo_or_dir='snakers4/silero-vad',
+            model='silero_vad',
+            source='github'
+        )
+        (self.get_speech_timestamps, _, _, _) = self.vad_utils
+
     def smooth_srp_map(self, srp_map, window_size:int=5):
         """
         Apply a moving average to the SRP map to smooth it.
+        Since srp_map might be 1D or a flattened 2D, adjust as needed.
         """
         window = np.ones(window_size) / window_size
-        # TODO: Might have to use 2D moving average
-        # return convolve2d(srp_map, kernel, mode='same')
         return np.convolve(srp_map, window, 'valid')
-    
+
     def apply_gsc(self, data, peaks, sidelobe_reduction=0.5):
         """
         Apply Generalized Sidelobe Canceller to boost signal at peaks and reduce elsewhere.
@@ -36,7 +43,7 @@ class XSrp(ABC):
 
         mask = self.smooth_srp_map(mask, window_size=10)  # Smooth the mask to create transition regions
         return data * (1 + mask * sidelobe_reduction)
-    
+
     def align_peaks_with_audio(self, srp_map, mic_signals, candidate_grid, n_best=4, segment_duration=0.5):
         """
         Align top peaks in the SRP map with audio segments from the microphone signals.
@@ -49,7 +56,7 @@ class XSrp(ABC):
             segment_duration (float): Duration of the audio segment in seconds.
 
         Returns:
-            list: List of audio segments corresponding to the top peaks.
+            tuple: A tuple containing the top indices, top candidates, and the audio segments.
         """
         # Get the top n peak indices from the SRP map
         top_indices = np.argsort(srp_map)[-n_best:]
@@ -61,7 +68,6 @@ class XSrp(ABC):
         for candidate in top_candidates:
             for mic_signal in mic_signals:
                 # Calculate the delay for this candidate and microphone
-                # Only need to calculate the delay from one microphone position to approximate the delay as the srp_map implicitly accounts for the delays
                 delay = np.linalg.norm(candidate - self.mic_positions[0]) / self.c
                 delay_samples = int(delay * self.fs)
 
@@ -71,34 +77,48 @@ class XSrp(ABC):
                 segment = mic_signal[start:end]
                 audio_segments.append(segment)
 
-        return audio_segments
-    
-    # def apply_gsc(self, mic_signals, top_candidates, mic_positions):
-    #     """
-    #     Apply a Generalized Sidelobe Canceller (GSC) to focus on the selected n best candidate locations.
-    #     This will boost the signals from the desired locations and reduce the signals from other locations.
-    #     """
-    #     # Calculate the delay for each microphone signal based on the top candidate's position
-    #     delays = [np.linalg.norm(mic_position - top_candidates[0]) / self.c for mic_position in mic_positions]
+        return top_indices, top_candidates, audio_segments
 
-    #     # Apply the delay to each microphone signal
-    #     delayed_signals = [np.roll(mic_signal, int(delay * self.fs)) for mic_signal, delay in zip(mic_signals, delays)]
+    def classify_candidates_with_vad(self, mic_signals, top_candidates, segment_duration=0.5):
+        """
+        Classify each candidate as speech or non-speech using silero-vad.
 
-    #     # Beamformer: sum the delayed signals
-    #     beamformer_output = np.sum(delayed_signals, axis=0)
+        This is a placeholder method. It assumes:
+        - You can extract a segment of audio from mic_signals for each candidate.
+        - Here, we dynamically analyze each candidate individually.
+        In a real scenario, you'd beamform towards each candidate and pick a segment of the beamformed output.
+        """
+        vad_labels = []
+        for candidate in top_candidates:
+            # Use the signal from the first microphone for simplicity
+            audio_data = torch.from_numpy(mic_signals[0].astype(np.float32))
 
-    #     # Blocking matrix: subtract the mean of the delayed signals from each delayed signal
-    #     mean_signal = np.mean(delayed_signals, axis=0)
-    #     blocking_matrix_output = [delayed_signal - mean_signal for delayed_signal in delayed_signals]
+            # Dynamically determine the segment based on the presence of strong signals
+            signal_threshold = 0.1 * np.max(audio_data.numpy())  # Example threshold
+            significant_indices = np.where(audio_data.numpy() > signal_threshold)[0]
+            if len(significant_indices) > 0:
+                center_index = significant_indices[len(significant_indices) // 2]
+            else:
+                center_index = len(audio_data) // 2  # Fallback to center of the signal
 
-    #     # GSC output: subtract the blocking matrix output from the beamformer output
-    #     gsc_output = beamformer_output - np.sum(blocking_matrix_output, axis=0)
+            # Determine the number of samples for the segment
+            half_segment_samples = int((segment_duration * self.fs) / 2)
+            start = max(0, center_index - half_segment_samples)
+            end = min(len(audio_data), center_index + half_segment_samples)
+            segment = audio_data[start:end]
 
-    #     return gsc_output
+            # Apply VAD
+            speech_timestamps = self.get_speech_timestamps(segment, self.vad_model, sampling_rate=self.fs)
+
+            # Label candidate as speech or non-speech based on VAD
+            is_speech = 1 if len(speech_timestamps) > 0 else 0
+            vad_labels.append(is_speech)
+
+        return vad_labels
 
     def forward(
         self, mic_signals, mic_positions=None, room_dims=None, n_best:int=4
-    ) -> tuple[set, np.array]:
+    ) -> tuple[np.array, np.array, Grid]:
         if mic_positions is None:
             mic_positions = self.mic_positions
         if room_dims is None:
@@ -106,48 +126,51 @@ class XSrp(ABC):
 
         if mic_positions is None:
             raise ValueError(
-                """
-                mic_positions and room_dims must be specified
-                either in the constructor or in the forward method
-                """
+                "mic_positions and room_dims must be specified either in the constructor or in the forward method"
             )
 
         candidate_grid = self.candidate_grid
 
         estimated_positions = np.array([])
 
-        # 1. Compute the signal features (usually, GCC-PHAT)
+        # 1. Compute the signal features (e.g., GCC-PHAT)
         signal_features = self.compute_signal_features(mic_signals)
 
         while True:
-            # 2. Project the signal features into space, i.e., create the SRP map
+            # 2. Create the SRP map
             srp_map = self.create_srp_map(
                 mic_positions, candidate_grid, signal_features
             )
 
-            top_indices = np.argsort(srp_map)[-n_best:]
-            top_candidates = candidate_grid[top_indices]
-
-            audio_segments  = self.align_peaks_with_audio(srp_map=srp_map, mic_signals=mic_signals, candidate_grid=candidate_grid)
-
-            
+            # Smooth SRP map
             srp_map = self.smooth_srp_map(srp_map=srp_map)
 
-            # Apply GSC to focus on the selected n best candidate locations
-            srp_map = self.apply_gsc(mic_signals, top_candidates, mic_positions)
+            # Apply GSC
+            srp_map = self.apply_gsc(srp_map, top_indices)
 
-            # 
+            # Align peaks with audio
+            top_indices, top_candidates, audio_segments = self.align_peaks_with_audio(srp_map, mic_signals, candidate_grid, n_best=n_best, segment_duration=0.5)
 
+            # ---- Integrate VAD Classification ----
+            # Classify the top candidates as speech or non-speech (1 as speech, 0 as non speech)
+            vad_labels = self.classify_candidates_with_vad(mic_signals, top_candidates, segment_duration=0.5)
 
+            # Here you can use vad_labels to filter non-speech candidates
+            # For example, remove candidates that are non-speech or reduce their SRP scores
+            # This is just an example:
+            for idx, label in enumerate(vad_labels):
+                if label == 0:
+                    # Reduce SRP score for non-speech candidates
+                    srp_map[top_indices[idx]] *= 0.1
 
-            # 3. Find the source position in the SRP map
+            # 3. Grid search step (refine candidate grid)
             estimated_positions, new_candidate_grid, signal_features = self.grid_search(
                 candidate_grid, srp_map, estimated_positions, signal_features
             )
 
-            # 4. Update the candidate grid
+            # 4. Update candidate grid
             if len(new_candidate_grid) == 0:
-                # If the new candidate grid is empty, we have found all the sources
+                # If no new candidates, we're done
                 break
             else:
                 candidate_grid = new_candidate_grid
