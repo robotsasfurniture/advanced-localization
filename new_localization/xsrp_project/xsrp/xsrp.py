@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torchaudio
 from abc import ABC, abstractmethod
+from scipy.signal import convolve2d
 
 from xsrp_project.xsrp.grids import Grid
 
@@ -30,8 +31,10 @@ class XSrp(ABC):
         Apply a moving average to the SRP map to smooth it.
         Since srp_map might be 1D or a flattened 2D, adjust as needed.
         """
+        # window = np.ones((window_size, window_size)) / window_size
         window = np.ones(window_size) / window_size
-        return np.convolve(srp_map, window, 'valid')
+        print(f"window shape: {window.shape}")
+        return np.convolve(srp_map, window, 'same')
 
     def apply_gsc(self, data, peaks, sidelobe_reduction=0.5):
         """
@@ -47,7 +50,7 @@ class XSrp(ABC):
         # mask = self.smooth_srp_map(mask, window_size=10)  # Smooth the mask to create transition regions
         return data * (1 + mask * sidelobe_reduction)
 
-    def align_peaks_with_audio(self, srp_map, mic_signals, candidate_grid, n_best=4, segment_duration=0.5, target_sample_rate=16000):
+    def align_peaks_with_audio(self, srp_map, mic_signals, candidate_grid, n_best=4, segment_duration=0.030, target_sample_rate=16000):
         """
         Align top peaks in the SRP map with audio segments from the microphone signals.
 
@@ -63,7 +66,8 @@ class XSrp(ABC):
         """
         # Get the top n peak indices from the SRP map
         top_indices = np.argsort(srp_map)[-n_best:]
-        top_candidates = candidate_grid[top_indices]
+        print(f"Top indices: {top_indices}")
+        top_candidates = candidate_grid.asarray().ravel()[top_indices]
 
         audio_segments = []
         half_segment_samples = int((segment_duration * self.fs) / 2)
@@ -135,8 +139,12 @@ class XSrp(ABC):
                 mic_positions, candidate_grid, signal_features
             )
 
+            print(f"SRP Map shape originally: {srp_map.shape}")
+
             # Smooth SRP map
             srp_map = self.smooth_srp_map(srp_map=srp_map)
+
+            print(f"SRP Map shape after smoothing: {srp_map.shape}")
 
             # Align peaks with audio
             top_indices, audio_segments = self.align_peaks_with_audio(srp_map, mic_signals, candidate_grid, n_best=n_best, segment_duration=0.5)

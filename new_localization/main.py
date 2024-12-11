@@ -43,8 +43,9 @@ channels = 4  # Number of mics
 # Initialize the ConventionalSrp object
 srp_func = ConventionalSrp(
     fs,
-    grid_type="doa_1D",
-    n_grid_cells=200,
+    grid_type="2D",
+    n_grid_cells=50,
+    room_dims=[10, 10],
     mic_positions=mic_positions,
     interpolation=False,
     mode="gcc_phat_freq",
@@ -54,13 +55,21 @@ srp_func = ConventionalSrp(
 )
 
 # Set up a matplotlib figure for live updates
-fig, ax = plt.subplots()
-ax.set_xlim(-1, 1)
-ax.set_ylim(-1, 1)
-ax.set_title("Real-time Sound Localization")
-ax.scatter(mic_positions[:, 0], mic_positions[:, 1], c="blue", s=50, label="Microphone Positions")
-scat = ax.scatter([], [], c="red", marker="*", s=50, label="Estimated Source")
-ax.legend()
+fig = plt.figure()
+ax1 = fig.add_subplot(1,2,1)
+ax1.set_xlim(-1, 1)
+ax1.set_ylim(-1, 1)
+ax1.set_title("Real-time Sound Localization")
+ax1.scatter(mic_positions[:, 0], mic_positions[:, 1], c="blue", s=50, label="Microphone Positions")
+scat = ax1.scatter([], [], c="red", marker="*", s=50, label="Estimated Source")
+ax1.legend()
+
+ax2 = fig.add_subplot(111, projection="3d")
+ax2.set_title("SRC Map")
+ax2.set_xlabel('x (cm)')
+ax2.set_ylabel('y (cm)')
+ax2.set_zlabel('power')
+
 
 # A buffer to store audio data
 audio_buffer = np.zeros((channels, frame_size))
@@ -79,9 +88,13 @@ def update_plot(frame):
     global audio_buffer, srp_func, scat
     
     estimated_positions, srp_map, candidate_grid = srp_func.forward(audio_buffer)
+    print(f"SRP shape: {srp_map.shape}")
+    print(f"Candidate grid shape: {candidate_grid.asarray().shape}")
+    print(f"Candidate grid X: {candidate_grid.asarray()[:, 0]}")
 
     # estimated_positions might have one or more sources; take the first source if present
     if estimated_positions is not None and len(estimated_positions) > 0:
+        ax2.plot_surface(candidate_grid.asarray()[:, 0], candidate_grid.asarray()[:, 1], srp_map.reshape((50, 50)), cmap='jet', edgecolor='none')
         scat.set_offsets([estimated_positions[0], estimated_positions[1]])
 
     return scat,
