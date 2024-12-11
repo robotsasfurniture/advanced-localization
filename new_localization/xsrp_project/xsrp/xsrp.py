@@ -26,28 +26,75 @@ class XSrp(ABC):
         # return convolve2d(srp_map, kernel, mode='same')
         return np.convolve(srp_map, window, 'valid')
     
-    def apply_gsc(self, mic_signals, top_candidates, mic_positions):
+    def apply_gsc(self, data, peaks, sidelobe_reduction=0.5):
         """
-        Apply a Generalized Sidelobe Canceller (GSC) to focus on the selected n best candidate locations.
-        This will boost the signals from the desired locations and reduce the signals from other locations.
+        Apply Generalized Sidelobe Canceller to boost signal at peaks and reduce elsewhere.
         """
-        # Calculate the delay for each microphone signal based on the top candidate's position
-        delays = [np.linalg.norm(mic_position - top_candidates[0]) / self.c for mic_position in mic_positions]
+        mask = np.zeros_like(data)
+        for peak in peaks:
+            mask[peak] = 1
 
-        # Apply the delay to each microphone signal
-        delayed_signals = [np.roll(mic_signal, int(delay * self.fs)) for mic_signal, delay in zip(mic_signals, delays)]
+        mask = self.smooth_srp_map(mask, window_size=10)  # Smooth the mask to create transition regions
+        return data * (1 + mask * sidelobe_reduction)
+    
+    def align_peaks_with_audio(self, srp_map, mic_signals, candidate_grid, n_best=4, segment_duration=0.5):
+        """
+        Align top peaks in the SRP map with audio segments from the microphone signals.
 
-        # Beamformer: sum the delayed signals
-        beamformer_output = np.sum(delayed_signals, axis=0)
+        Args:
+            srp_map (np.array): The SRP map values.
+            mic_signals (list): List of microphone signals.
+            candidate_grid (Grid): The spatial candidate grid.
+            n_best (int): Number of top peaks to align.
+            segment_duration (float): Duration of the audio segment in seconds.
 
-        # Blocking matrix: subtract the mean of the delayed signals from each delayed signal
-        mean_signal = np.mean(delayed_signals, axis=0)
-        blocking_matrix_output = [delayed_signal - mean_signal for delayed_signal in delayed_signals]
+        Returns:
+            list: List of audio segments corresponding to the top peaks.
+        """
+        # Get the top n peak indices from the SRP map
+        top_indices = np.argsort(srp_map)[-n_best:]
+        top_candidates = candidate_grid[top_indices]
 
-        # GSC output: subtract the blocking matrix output from the beamformer output
-        gsc_output = beamformer_output - np.sum(blocking_matrix_output, axis=0)
+        audio_segments = []
+        half_segment_samples = int((segment_duration * self.fs) / 2)
 
-        return gsc_output
+        for candidate in top_candidates:
+            for mic_signal in mic_signals:
+                # Calculate the delay for this candidate and microphone
+                # Only need to calculate the delay from one microphone position to approximate the delay as the srp_map implicitly accounts for the delays
+                delay = np.linalg.norm(candidate - self.mic_positions[0]) / self.c
+                delay_samples = int(delay * self.fs)
+
+                # Extract the segment around the delay
+                start = max(0, delay_samples - half_segment_samples)
+                end = min(len(mic_signal), delay_samples + half_segment_samples)
+                segment = mic_signal[start:end]
+                audio_segments.append(segment)
+
+        return audio_segments
+    
+    # def apply_gsc(self, mic_signals, top_candidates, mic_positions):
+    #     """
+    #     Apply a Generalized Sidelobe Canceller (GSC) to focus on the selected n best candidate locations.
+    #     This will boost the signals from the desired locations and reduce the signals from other locations.
+    #     """
+    #     # Calculate the delay for each microphone signal based on the top candidate's position
+    #     delays = [np.linalg.norm(mic_position - top_candidates[0]) / self.c for mic_position in mic_positions]
+
+    #     # Apply the delay to each microphone signal
+    #     delayed_signals = [np.roll(mic_signal, int(delay * self.fs)) for mic_signal, delay in zip(mic_signals, delays)]
+
+    #     # Beamformer: sum the delayed signals
+    #     beamformer_output = np.sum(delayed_signals, axis=0)
+
+    #     # Blocking matrix: subtract the mean of the delayed signals from each delayed signal
+    #     mean_signal = np.mean(delayed_signals, axis=0)
+    #     blocking_matrix_output = [delayed_signal - mean_signal for delayed_signal in delayed_signals]
+
+    #     # GSC output: subtract the blocking matrix output from the beamformer output
+    #     gsc_output = beamformer_output - np.sum(blocking_matrix_output, axis=0)
+
+    #     return gsc_output
 
     def forward(
         self, mic_signals, mic_positions=None, room_dims=None, n_best:int=4
@@ -81,10 +128,15 @@ class XSrp(ABC):
             top_indices = np.argsort(srp_map)[-n_best:]
             top_candidates = candidate_grid[top_indices]
 
+            audio_segments  = self.align_peaks_with_audio(srp_map=srp_map, mic_signals=mic_signals, candidate_grid=candidate_grid)
+
+            
             srp_map = self.smooth_srp_map(srp_map=srp_map)
 
             # Apply GSC to focus on the selected n best candidate locations
-            # self.apply_gsc(mic_signals, top_candidates, mic_positions)
+            srp_map = self.apply_gsc(mic_signals, top_candidates, mic_positions)
+
+            # 
 
 
 
