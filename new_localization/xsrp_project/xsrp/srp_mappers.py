@@ -129,6 +129,7 @@ def frequency_projector(mic_positions: np.array,
     n_freqs = cross_correlation_matrix.shape[-1]
     freqs = np.linspace(0, fs/2, n_freqs)
     spatial_mapper = frequency_delay_mapper(candidate_grid, mic_positions, freqs)
+    print(f"Spatial mapper: {spatial_mapper.shape}")
 
     srp_map = cross_correlation_matrix[np.newaxis] * spatial_mapper
 

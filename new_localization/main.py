@@ -26,6 +26,15 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
 print(
     "Please enter the microphone positions in the format [x1, y1], [x2, y2], [x3, y3], [x4, y4]"
 )
+# mic_positions = np.array(
+#     [
+#         [0.0000, 0.4500, 0.41],
+#         [-0.4500, 0.0000, 0.41],
+#         [0.0000, -0.4500, 0.41],
+#         [0.4500, 0.0000, 0.41],
+#     ]
+# )
+
 mic_positions = np.array(
     [
         [0.0000, 0.4500],
@@ -59,9 +68,10 @@ srp_func = ConventionalSrp(
 
 # Set up a matplotlib figure for live updates
 fig = plt.figure()
-ax1 = fig.add_subplot(1, 2, 1)
-ax1.set_xlim(-1, 1)
-ax1.set_ylim(-1, 1)
+
+ax1 = fig.add_subplot(1,2,1)
+ax1.set_xlim(-10, 10)
+ax1.set_ylim(-10, 10)
 ax1.set_title("Real-time Sound Localization")
 ax1.scatter(
     mic_positions[:, 0],
@@ -73,11 +83,24 @@ ax1.scatter(
 scat = ax1.scatter([], [], c="red", marker="*", s=50, label="Estimated Source")
 ax1.legend()
 
-ax2 = fig.add_subplot(111, projection="3d")
+ax2 = fig.add_subplot(1,2,2, projection="3d")
 ax2.set_title("SRC Map")
 ax2.set_xlabel("x (cm)")
 ax2.set_ylabel("y (cm)")
 ax2.set_zlabel("power")
+
+# Initialize the ConventionalSrp object
+# srp_func = ConventionalSrp(
+#     fs,
+#     grid_type="doa_2D",
+#     n_grid_cells=200,
+#     mic_positions=mic_positions,
+#     interpolation=False,
+#     mode="gcc_phat_freq",
+#     n_average_samples=5,
+#     freq_cutoff_in_hz=None,
+# )
+
 
 
 # A buffer to store audio data
@@ -100,31 +123,19 @@ def update_plot(frame):
     estimated_positions, srp_map, candidate_grid = srp_func.forward(audio_buffer)
     print(f"SRP shape: {srp_map.shape}")
     print(f"Candidate grid shape: {candidate_grid.asarray().shape}")
-    print(f"Candidate grid X: {candidate_grid.asarray()[:, 0]}")
+    print(f"Candidate grid X: {candidate_grid.asarray()[:, 0].shape}")
+    print(f"Reshape shape: {srp_map.reshape((50, 50)).shape}")
+
+    X = candidate_grid.asarray()[:, 0].reshape((50, 50))
+    Y = candidate_grid.asarray()[:, 1].reshape((50, 50))
+    Z = srp_map.reshape((50, 50))
 
     # estimated_positions might have one or more sources; take the first source if present
     if estimated_positions is not None and len(estimated_positions) > 0:
-        num_cells = int(np.sqrt(candidate_grid.asarray().shape[0]))
-        assert (
-            srp_map.size == num_cells**2
-        ), "SRP map size does not match grid dimensions."
-
-        # Reshape SRP map and grid coordinates
-        srp_map = srp_map.reshape((num_cells, num_cells))
-        candidate_grid_x = candidate_grid.asarray()[:, 0].reshape(
-            (num_cells, num_cells)
-        )
-        candidate_grid_y = candidate_grid.asarray()[:, 1].reshape(
-            (num_cells, num_cells)
-        )
-
-        ax2.plot_surface(
-            candidate_grid_x,
-            candidate_grid_y,
-            srp_map,
-            cmap="jet",
-            edgecolor="none",
-        )
+        print(f"Estimated position: {estimated_positions}")
+        # ax2.plot_surface(candidate_grid.asarray()[:, 0], candidate_grid.asarray()[:, 1], srp_map.reshape((50, 50)), cmap='jet', edgecolor='none')
+        ax2.clear()
+        ax2.plot_surface(X, Y, Z, cmap='jet', edgecolor='none')
         scat.set_offsets([estimated_positions[0], estimated_positions[1]])
 
     return (scat,)
@@ -144,6 +155,7 @@ stream = sd.InputStream(
     device=int(device_index),  # Please specify the device index
     channels=channels,
     samplerate=fs,
+    # samplerate=16000,
     blocksize=frame_size,
     callback=audio_callback,
 )

@@ -50,7 +50,7 @@ class XSrp(ABC):
         # mask = self.smooth_srp_map(mask, window_size=10)  # Smooth the mask to create transition regions
         return data * (1 + mask * sidelobe_reduction)
 
-    def align_peaks_with_audio(self, srp_map, mic_signals, candidate_grid, n_best=4, segment_duration=0.030, target_sample_rate=16000):
+    def align_peaks_with_audio(self, srp_map, mic_signals, candidate_grid, n_best=4, segment_duration=0.5, target_sample_rate=16000):
         """
         Align top peaks in the SRP map with audio segments from the microphone signals.
 
@@ -69,21 +69,33 @@ class XSrp(ABC):
         print(f"Top indices: {top_indices}")
         top_candidates = candidate_grid.asarray().ravel()[top_indices]
 
-        audio_segments = []
-        half_segment_samples = int((segment_duration * self.fs) / 2)
+        # Convert the first microphone signal into a tensor and resample it first
+        mic_signal = torch.tensor(mic_signals[0].copy(), dtype=torch.float32)
+        resampled_signal = torchaudio.transforms.Resample(orig_freq=self.fs, new_freq=target_sample_rate)(mic_signal)
+        # resampled_signal = resample_transform(mic_signal)
 
+        # half_segment_samples = int((segment_duration * self.fs) / 2)
+        half_segment_samples = int((segment_duration * target_sample_rate) / 2)
+
+        audio_segments = []
         for candidate in top_candidates:
             # Calculate the delay for this candidate and the reference microphone
             delay = np.linalg.norm(candidate - self.mic_positions[0]) / self.c
-            delay_samples = int(delay * self.fs)
+            # delay_samples = int(delay * self.fs)
+            delay_samples_target = int(delay * target_sample_rate)
 
             # Extract the segment around the delay
-            mic_signal = mic_signals[0]  # Use the first microphone signal as the reference
-            start = max(0, delay_samples - half_segment_samples)
-            end = min(len(mic_signal), delay_samples + half_segment_samples)
-            segment = mic_signal[start:end]
-            segment_resampled = torchaudio.transforms.Resample(orig_freq=self.fs, new_freq=target_sample_rate)(torch.tensor(segment.copy(), dtype=torch.float32))
-            audio_segments.append(segment_resampled)
+            # mic_signal = mic_signals[0]  # Use the first microphone signal as the reference
+            # start = max(0, delay_samples - half_segment_samples)
+            start = max(0, delay_samples_target - half_segment_samples)
+            # end = min(len(mic_signal), delay_samples + half_segment_samples)
+            end = min(len(resampled_signal), delay_samples_target + half_segment_samples)
+            # segment = mic_signal[start:end]
+            segment = resampled_signal[start:end]
+            # segment_resampled = torchaudio.transforms.Resample(orig_freq=self.fs, new_freq=target_sample_rate)(torch.tensor(segment.copy(), dtype=torch.float32))
+            
+            # audio_segments.append(segment_resampled)
+            audio_segments.append(segment)
 
         return top_indices, audio_segments
 
@@ -103,6 +115,9 @@ class XSrp(ABC):
             # Convert the audio segment to a torch.Tensor if it is not already
             if not isinstance(segment, torch.Tensor):
                 segment = torch.from_numpy(segment.astype(np.float32))
+
+
+            print(f"Segment shape: {segment.shape}")
 
             # Apply VAD
             speech_timestamps = self.get_speech_timestamps(segment, self.vad_model, sampling_rate=target_sample_rate)
